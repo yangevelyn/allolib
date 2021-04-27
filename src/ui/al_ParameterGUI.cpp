@@ -875,8 +875,11 @@ void ParameterGUI::drawSequenceRecorder(SequenceRecorder *sequenceRecorder) {
         sequenceRecorder->stopRecord();
       }
     }
-    ImGui::SameLine();
+    // ImGui::SameLine();
     ImGui::Checkbox("Overwrite##__SequenceRecorder",
+                    &state.overwriteButtonValue);
+    ImGui::SameLine();
+    ImGui::Checkbox("Quantize##__SequenceRecorder",
                     &state.overwriteButtonValue);
   }
 }
@@ -970,6 +973,7 @@ void ParameterGUI::drawSynthRecorder(SynthRecorder *synthRecorder) {
   struct SynthRecorderState {
     bool recordButton;
     bool overrideButton;
+    bool quantizeButton;
   };
   static std::map<SynthRecorder *, SynthRecorderState> stateMap;
   if (stateMap.find(synthRecorder) == stateMap.end()) {
@@ -985,6 +989,19 @@ void ParameterGUI::drawSynthRecorder(SynthRecorder *synthRecorder) {
     if (state.recordButton) {
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0, 0.0, 0.0, 1.0));
     }
+    // ImGui::SameLine();
+    ImGui::Checkbox("Overwrite##__EventRecorder", &state.overrideButton);
+    // add quantize function
+    ImGui::Checkbox("Quantize##__EventRecorder", &state.quantizeButton);
+    ImGui::PushItemWidth(32);
+    ImGui::SameLine();
+    static char tempoBuf[16] = "120";
+    ImGui::InputText("Tempo##__EventRecorder", tempoBuf, 16);
+    ImGui::SameLine();
+    static char noteBuf[16] = "8";
+    ImGui::InputText("Note Type##__EventRecorder", noteBuf, 16);
+    ImGui::PopItemWidth();
+    // move record button to next row
     std::string buttonText = state.recordButton ? "Stop##__EventRecorder"
                                                 : "Record##__EventRecorder";
     bool recordButtonClicked = ImGui::Button(buttonText.c_str());
@@ -994,13 +1011,12 @@ void ParameterGUI::drawSynthRecorder(SynthRecorder *synthRecorder) {
     if (recordButtonClicked) {
       state.recordButton = !state.recordButton;
       if (state.recordButton) {
-        synthRecorder->startRecord(buf1, state.overrideButton);
+        synthRecorder->startRecord(buf1, state.overrideButton, 
+                                   tempoBuf, state.quantizeButton, noteBuf);
       } else {
         synthRecorder->stopRecord();
       }
     }
-    ImGui::SameLine();
-    ImGui::Checkbox("Overwrite##__EventRecorder", &state.overrideButton);
   }
 }
 

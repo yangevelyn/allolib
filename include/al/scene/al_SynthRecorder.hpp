@@ -112,7 +112,10 @@ class SynthRecorder {
   }
 
   void startRecord(std::string name = "", bool overwrite = false,
+                   std::string tempo = "120", bool quantize = false, std::string note = "8",
                    bool startOnEvent = true);
+
+  double quantize(double time);
 
   void stopRecord();
 
@@ -223,6 +226,10 @@ class SynthRecorder {
   al_sec mMaxRecordTime;
   std::chrono::high_resolution_clock::time_point mSequenceStart;
   std::vector<SynthEvent> mSequence;
+
+  bool mQuantize;
+  int mTempo;
+  int mNote;
 };
 
 // Implementation

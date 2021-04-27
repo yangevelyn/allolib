@@ -4,12 +4,64 @@
 using namespace al;
 
 void SynthRecorder::startRecord(std::string name, bool overwrite,
+                                std::string tempo, bool quantize, std::string note,
                                 bool startOnEvent) {
   mOverwrite = overwrite;
   mStartOnEvent = startOnEvent;
   mRecording = true;
   mSequenceStart = std::chrono::high_resolution_clock::now();
   mSequenceName = name;
+
+  mQuantize = quantize;
+  mNote = std::stoi(note);
+  mTempo = std::stoi(tempo);
+}
+
+// quantizing to quarter note = tempo
+double SynthRecorder::quantize(double time){
+    if(!mQuantize){
+        return time;
+    }
+
+    std::cout << "---" << time << "---" << std::endl;
+    double barLength = 60./mTempo * 4;
+
+    // times of eight eighth notes
+    std::vector<double> noteVec;
+    for(int i = 0; i < mNote; i++){
+        noteVec.push_back(i * barLength/mNote/1.);
+    }
+    
+    for(int i = 0; i < noteVec.size(); i++){
+        std::cout << noteVec[i] << std::endl;
+    }
+
+    double time1 = time;
+    int bars = 0;
+    while(time1 > barLength){
+        time1 -= barLength;
+        bars++;
+    }
+    std::cout << "time in first bar: " << time1 << std::endl;
+
+    // get difference in time to each of the eighth notes
+    std::vector<double> diffVec;
+    // double m_1, m_2, m_3, m_4, m_5, m_6, m_7, m_8;
+    for(int i = 0; i < noteVec.size(); i++){
+        // std::cout << "eighth: " << noteVec[i] << ", diff: " << std::abs(noteVec[i] - time1) << std::endl;
+        diffVec.push_back(std::abs(noteVec[i] - time1));
+    }
+
+    // get minimum difference, set quantized time
+    auto minDiff = std::min_element(diffVec.begin(), diffVec.end());
+    double closestEighth = noteVec[minDiff - diffVec.begin()];
+    std::cout << "closest eighth: " << closestEighth << std::endl;
+    std::cout << bars * barLength + closestEighth << std::endl;
+    return std::abs(bars * barLength + closestEighth - time) < std::abs(bars * barLength - time) ?
+        std::abs(bars * barLength + closestEighth - time) < std::abs((bars + 1) * barLength - time) ? 
+        bars * barLength + closestEighth : (bars + 1) * barLength : 
+        std::abs(bars * barLength - time) < std::abs((bars + 1) * barLength - time) ? 
+        bars * barLength : (bars + 1) * barLength;
 }
 
 void SynthRecorder::stopRecord() {
@@ -61,7 +113,7 @@ void SynthRecorder::stopRecord() {
         auto idMatch = eventStack.find(event.id);
         if (idMatch != eventStack.end()) {
           double duration = event.time - idMatch->second->time;
-          f << "@ " << idMatch->second->time << " " << duration << " "
+          f << "@ " << quantize(idMatch->second->time) << " " << duration << " "
             << idMatch->second->synthName << " ";
           for (auto &field : idMatch->second->pFields) {
             if (field.type() == ParameterField::STRING) {
