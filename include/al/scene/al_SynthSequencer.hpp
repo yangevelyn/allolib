@@ -175,6 +175,9 @@ struct SynthEvent {
 
 class SynthSequencer {
 public:
+  // list of preset sequences
+  std::vector<std::string> sequenceList;
+
   SynthSequencer(TimeMasterMode masterMode = TimeMasterMode::TIME_MASTER_CPU) {
     mMasterMode = masterMode;
     mInternalSynth = std::make_unique<PolySynth>(masterMode);

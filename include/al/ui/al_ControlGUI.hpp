@@ -323,10 +323,14 @@ class ControlGUI {
   SequenceRecorder *mSequenceRecorder{nullptr};
   SynthRecorder *mSynthRecorder{nullptr};
   SynthSequencer *mSynthSequencer{nullptr};
+  SynthSequencer *mSynthSequencer2{nullptr};
+  SynthSequencer *mSynthSequencer3{nullptr};
   PolySynth *mPolySynth{nullptr};
   DynamicScene *mScene{nullptr};
   std::map<std::string, BundleGUIManager *> mBundles;
   Nav *mNav{nullptr};
+
+  std::vector<SynthSequencer*> mSequencerList = {mSynthSequencer, mSynthSequencer2, mSynthSequencer3};
 
   std::string mName;
   bool mFixed{true};

@@ -1,9 +1,149 @@
 #include "al/ui/al_ParameterGUI.hpp"
 
+#include "Gamma/Analysis.h"
+#include "Gamma/Effects.h"
+#include "Gamma/Envelope.h"
+#include "Gamma/Gamma.h"
+#include "Gamma/Oscillator.h"
+#include "Gamma/Types.h"
+
 #include <string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 
 using namespace al;
 using namespace std;
+
+class Sub : public SynthVoice {
+public:
+
+    // Unit generators
+    float mNoiseMix;
+    gam::Pan<> mPan;
+    gam::ADSR<> mAmpEnv;
+    gam::EnvFollow<> mEnvFollow;  // envelope follower to connect audio output to graphics
+    gam::DSF<> mOsc;
+    gam::NoiseWhite<> mNoise;
+    gam::Reson<> mRes;
+    gam::Env<2> mCFEnv;
+    gam::Env<2> mBWEnv;
+    // Additional members
+    Mesh mMesh;
+
+    // Initialize voice. This function will nly be called once per voice
+    void init() override {
+        mAmpEnv.curve(0); // linear segments
+        mAmpEnv.levels(0,1.0,1.0,0); // These tables are not normalized, so scale to 0.3
+        mAmpEnv.sustainPoint(2); // Make point 2 sustain until a release is issued
+        mCFEnv.curve(0);
+        mBWEnv.curve(0);
+        mOsc.harmonics(12);
+        // We have the mesh be a sphere
+        // addDisc(mMesh, 1.0, 30);
+
+        createInternalTriggerParameter("amplitude", 0.3, 0.0, 1.0);
+        createInternalTriggerParameter("frequency", 60, 20, 5000);
+        createInternalTriggerParameter("attackTime", 0.1, 0.01, 3.0);
+        createInternalTriggerParameter("releaseTime", 3.0, 0.1, 10.0);
+        createInternalTriggerParameter("sustain", 0.7, 0.0, 1.0);
+        createInternalTriggerParameter("curve", 4.0, -10.0, 10.0);
+        createInternalTriggerParameter("noise", 0.0, 0.0, 1.0);
+        createInternalTriggerParameter("envDur",1, 0.0, 5.0);
+        createInternalTriggerParameter("cf1", 400.0, 10.0, 5000);
+        createInternalTriggerParameter("cf2", 400.0, 10.0, 5000);
+        createInternalTriggerParameter("cfRise", 0.5, 0.1, 2);
+        createInternalTriggerParameter("bw1", 700.0, 10.0, 5000);
+        createInternalTriggerParameter("bw2", 900.0, 10.0, 5000);
+        createInternalTriggerParameter("bwRise", 0.5, 0.1, 2);
+        createInternalTriggerParameter("hmnum", 12.0, 5.0, 20.0);
+        createInternalTriggerParameter("hmamp", 1.0, 0.0, 1.0);
+        createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
+
+    }
+
+    //
+    
+    virtual void onProcess(AudioIOData& io) override {
+        updateFromParameters();
+        float amp = getInternalParameterValue("amplitude");
+        float noiseMix = getInternalParameterValue("noise");
+        while(io()){
+            // mix oscillator with noise
+            float s1 = mOsc()*(1-noiseMix) + mNoise()*noiseMix;
+
+            // apply resonant filter
+            mRes.set(mCFEnv(), mBWEnv());
+            s1 = mRes(s1);
+
+            // appy amplitude envelope
+            s1 *= mAmpEnv() * amp;
+
+            float s2;
+            mPan(s1, s1,s2);
+            io.out(0) += s1;
+            io.out(1) += s2;
+        }
+        
+        
+        if(mAmpEnv.done() && (mEnvFollow.value() < 0.001f)) free();
+    }
+
+   virtual void onProcess(Graphics &g) {
+          float frequency = getInternalParameterValue("frequency");
+          float amplitude = getInternalParameterValue("amplitude");
+          g.pushMatrix();
+          g.translate(amplitude,  amplitude, -4);
+          //g.scale(frequency/2000, frequency/4000, 1);
+          float scaling = 0.1;
+          g.scale(scaling * frequency/200, scaling * frequency/400, scaling* 1);
+          g.color(mEnvFollow.value(), frequency/1000, mEnvFollow.value()* 10, 0.4);
+          g.draw(mMesh);
+          g.popMatrix();
+   }
+    virtual void onTriggerOn() override {
+        updateFromParameters();
+        mAmpEnv.reset();
+        mCFEnv.reset();
+        mBWEnv.reset();
+        
+    }
+
+    virtual void onTriggerOff() override {
+        mAmpEnv.triggerRelease();
+//        mCFEnv.triggerRelease();
+//        mBWEnv.triggerRelease();
+    }
+
+    void updateFromParameters() {
+        mOsc.freq(getInternalParameterValue("frequency"));
+        mOsc.harmonics(getInternalParameterValue("hmnum"));
+        mOsc.ampRatio(getInternalParameterValue("hmamp"));
+        mAmpEnv.attack(getInternalParameterValue("attackTime"));
+    //    mAmpEnv.decay(getInternalParameterValue("attackTime"));
+        mAmpEnv.release(getInternalParameterValue("releaseTime"));
+        mAmpEnv.levels()[1]=getInternalParameterValue("sustain");
+        mAmpEnv.levels()[2]=getInternalParameterValue("sustain");
+
+        mAmpEnv.curve(getInternalParameterValue("curve"));
+        mPan.pos(getInternalParameterValue("pan"));
+        mCFEnv.levels(getInternalParameterValue("cf1"),
+                      getInternalParameterValue("cf2"),
+                      getInternalParameterValue("cf1"));
+
+
+        mCFEnv.lengths()[0] = getInternalParameterValue("cfRise");
+        mCFEnv.lengths()[1] = 1 - getInternalParameterValue("cfRise");
+        mBWEnv.levels(getInternalParameterValue("bw1"),
+                      getInternalParameterValue("bw2"),
+                      getInternalParameterValue("bw1"));
+        mBWEnv.lengths()[0] = getInternalParameterValue("bwRise");
+        mBWEnv.lengths()[1] = 1- getInternalParameterValue("bwRise");
+
+        mCFEnv.totalLength(getInternalParameterValue("envDur"));
+        mBWEnv.totalLength(getInternalParameterValue("envDur"));
+    }
+};
 
 void ParameterGUI::drawVectorParameters(std::vector<ParameterMeta *> params,
                                         string suffix) {
@@ -884,6 +1024,138 @@ void ParameterGUI::drawSequenceRecorder(SequenceRecorder *sequenceRecorder) {
   }
 }
 
+// NEW
+void ParameterGUI::drawSynthSequencer(std::vector<SynthSequencer*> sequencerList) {
+    std::string headerLabel = "Multi Sequencer";
+    if (ImGui::CollapsingHeader(headerLabel.c_str(),
+                              ImGuiTreeNodeFlags_CollapsingHeader |
+                                  ImGuiTreeNodeFlags_DefaultOpen)) {
+        for(int i = 0; i < sequencerList.size(); i++){
+            SynthSequencer* synthSequencer = sequencerList[i];
+            struct SynthSequencerState {
+                int currentItem;
+                float totalDuration{0.0f};
+                float currentTime{0.0f};
+                bool newSequence{false};
+                std::string loadedSequence;
+            };
+            static std::map<SynthSequencer *, SynthSequencerState> stateMap;
+            if (stateMap.find(synthSequencer) == stateMap.end()) {
+                stateMap[synthSequencer] = SynthSequencerState{0};
+                float *currentTime = &(stateMap[synthSequencer].currentTime);
+                auto *state = &(stateMap[synthSequencer]);
+                synthSequencer->registerTimeChangeCallback(
+                    [currentTime](float currTime) { *currentTime = currTime; }, 0.1f);
+                synthSequencer->registerSequenceBeginCallback(
+                    [state](std::string sequenceName) {
+                    state->loadedSequence = sequenceName;
+                    state->newSequence = true; // poor man's mutex... perhaps should eb
+                                                // changed to a real mutex...
+                    });
+            }
+            SynthSequencerState &state = stateMap[synthSequencer];
+
+            std::vector<std::string> seqList = synthSequencer->getSequenceList();
+            char arr[seqList[i].length() + 1];
+            std::strcpy(arr, seqList[i].c_str());
+            if(ImGui::Button(arr)){
+                state.currentItem = i;
+                state.newSequence = false;
+                state.totalDuration =
+                synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+                synthSequencer->playSequence(seqList[i]);
+                synthSequencer->stopSequence();
+                while (synthSequencer->synth().getActiveVoices()) {
+                synthSequencer->synth().allNotesOff();
+                al_sleep(0.05);
+                }
+                state.totalDuration =
+                    synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+                synthSequencer->playSequence(seqList[state.currentItem]);
+            }
+        }
+
+        // std::string id = std::to_string((uint64_t)synthSequencer);
+        // std::string suffix = "##EventSequencer" + id;
+        // ImGui::PushID(suffix.c_str());
+        // std::string headerLabel = "Event Sequencer";
+        // if (ImGui::CollapsingHeader(headerLabel.c_str(),
+        //                             ImGuiTreeNodeFlags_CollapsingHeader |
+        //                                 ImGuiTreeNodeFlags_DefaultOpen)) {
+        //     std::vector<std::string> seqList = synthSequencer->getSequenceList();
+        //     if (state.newSequence) {
+        //     ptrdiff_t pos =
+        //         find(seqList.begin(), seqList.end(), state.loadedSequence) -
+        //         seqList.begin();
+        //     if (size_t(pos) < seqList.size()) {
+        //         state.currentItem = pos;
+        //         state.newSequence = false;
+        //         state.totalDuration =
+        //             synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+        //     }
+        //     state.newSequence = false;
+        //     }
+        //     // TODO we should only refresh occasionally or perhaps reactively.
+        //     if (seqList.size() > 0) {
+        //     if (seqList.size() > 64) {
+        //         seqList.resize(64);
+        //         std::cout << "Cropping sequence list to 64 items for display"
+        //                 << std::endl;
+        //     }
+        //     //   for(int i = 0; i < 10; i++){
+        //     //       char arr[seqList[i].length() + 1];
+        //     //       strcpy(arr, seqList[i].c_str());
+        //     //       if(ImGui::Button(arr)){
+        //     //           synthSequencer->playSequence(seqList[i]);
+        //     //       }
+        //     //   }
+        //     if (ImGui::Combo("Sequences", &state.currentItem,
+        //                     ParameterGUI::vector_getter,
+        //                     static_cast<void *>(&seqList), seqList.size())) {
+        //         state.totalDuration =
+        //             synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+        //     }
+        //     if (ImGui::Button("Play")) {
+        //         synthSequencer->stopSequence();
+        //         while (synthSequencer->synth().getActiveVoices()) {
+        //         synthSequencer->synth().allNotesOff();
+        //         al_sleep(0.05);
+        //         }
+        //         state.totalDuration =
+        //             synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+        //         synthSequencer->playSequence(seqList[state.currentItem]);
+        //     }
+        //     ImGui::SameLine();
+        //     if (ImGui::Button("Stop")) {
+        //         synthSequencer->synth().allNotesOff();
+        //         synthSequencer->stopSequence();
+        //     }
+        //     //            static float time = state.currentTime;
+        //     if (ImGui::SliderFloat("Position", &state.currentTime, 0.0f,
+        //                             state.totalDuration)) {
+        //         std::cout << "Requested time:" << state.currentTime << std::endl;
+        //         synthSequencer->setTime(state.currentTime);
+        //     }
+        //     } else {
+        //     ImGui::Text("No sequences found.");
+        //     }
+        // }
+        ImGui::PopID();
+    }
+}
+
+// NEW
+void ParameterGUI::drawMultiSynthSequencer(SynthSequencer *synthSequencer, SynthSequencer *synthSequencer2) {
+    al::ParameterGUI::drawSynthSequencer(synthSequencer);
+    al::ParameterGUI::drawSynthSequencer(synthSequencer2);
+    // std::string headerLabel = "Multi Sequencer";
+    // if (ImGui::CollapsingHeader(headerLabel.c_str(),
+    //                           ImGuiTreeNodeFlags_CollapsingHeader |
+    //                               ImGuiTreeNodeFlags_DefaultOpen)) {
+    //     if(ImGui::Button())
+    // }
+}
+
 void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
   struct SynthSequencerState {
     int currentItem;
@@ -891,6 +1163,8 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
     float currentTime{0.0f};
     bool newSequence{false};
     std::string loadedSequence;
+    bool adjustTempo;
+    std::string include;
   };
   static std::map<SynthSequencer *, SynthSequencerState> stateMap;
   if (stateMap.find(synthSequencer) == stateMap.end()) {
@@ -901,7 +1175,7 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
         [currentTime](float currTime) { *currentTime = currTime; }, 0.1f);
     synthSequencer->registerSequenceBeginCallback(
         [state](std::string sequenceName) {
-          state->loadedSequence = sequenceName;
+          if(sequenceName != "temp"){state->loadedSequence = sequenceName;};
           state->newSequence = true; // poor man's mutex... perhaps should eb
                                      // changed to a real mutex...
         });
@@ -920,7 +1194,8 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
       ptrdiff_t pos =
           find(seqList.begin(), seqList.end(), state.loadedSequence) -
           seqList.begin();
-      if (size_t(pos) < seqList.size()) {
+      if (size_t(pos) < seqList.size() && seqList[state.currentItem] != "temp") {
+        std::cout << "setting currentItem to " << seqList[state.currentItem] << std::endl;
         state.currentItem = pos;
         state.newSequence = false;
         state.totalDuration =
@@ -935,32 +1210,139 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
         std::cout << "Cropping sequence list to 64 items for display"
                   << std::endl;
       }
+      for(int i = 0; i < 10; i++){
+        char arr[seqList[i].length() + 1];
+        strcpy(arr, seqList[i].c_str());
+        synthSequencer->sequenceList.push_back(seqList[i].c_str());
+        if(i % 5 != 0){
+          ImGui::SameLine();
+        }
+        if(ImGui::Button(arr)){
+            // synthSequencer->playSequence(seqList[i]);
+            // synthSequencer->synth().registerSynthClass<Sub>(synthSequencer->buildFullPath(seqList[i]));
+          state.include += "= " + to_string(state.currentTime) + " \"" + seqList[i] + ".synthSequence\" 1\n";
+          // std::cout << state.include << std::endl;
+
+          // auto *voice = synthSequencer->synth().getVoice<Sub>();
+          // synthSequencer->addVoice(voice, &state.currentTime, )
+
+          synthSequencer->stopSequence();
+          while (synthSequencer->synth().getActiveVoices()) {
+            synthSequencer->synth().allNotesOff();
+            al_sleep(0.05);
+          }
+          // build a temp string and add specified settings
+          std::string name = seqList[state.currentItem];
+          std::cout << state.include << std::endl;
+          std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
+          std::cout << currStr << std::endl;
+          std::string tempStr = synthSequencer->buildFullPath("temp");
+          std::ifstream src(currStr, std::ios::binary);
+          std::ofstream tempFile(tempStr, std::ios::binary);
+          // std::cout << "include: " << state.include << std::endl;
+          tempFile << state.include.c_str() << "\n";
+          // tempFile << "t " << tempoBuf << "\n";
+          tempFile << src.rdbuf();
+          tempFile.close();
+          name = "temp";
+
+          // play temp file instead of selected
+          // std::cout << currStr << std::endl;
+          // std::cout << seqList[state.currentItem] << std::endl;
+          // std::cout << tempStr << std::endl;
+          state.totalDuration =
+              synthSequencer->getSequenceDuration(name);
+          synthSequencer->playSequence(name, state.currentTime + 0.2);
+          }
+
+        // if(ImGui::Combo(std::to_string(i).c_str(), &state.currentItem, ParameterGUI::vector_getter,
+        //                static_cast<void *>(&seqList), seqList.size())) {
+          
+        // }
+      }
       if (ImGui::Combo("Sequences", &state.currentItem,
                        ParameterGUI::vector_getter,
                        static_cast<void *>(&seqList), seqList.size())) {
         state.totalDuration =
             synthSequencer->getSequenceDuration(seqList[state.currentItem]);
       }
+
+        // adjust tempo
+        ImGui::Checkbox("Adjust Tempo##__EventRecorder", &state.adjustTempo);
+        ImGui::PushItemWidth(32);
+        ImGui::SameLine();
+        static char tempoBuf[16] = "120";
+        ImGui::InputText("bpm##__EventRecorder", tempoBuf, 16);
+        ImGui::PopItemWidth();
+
       if (ImGui::Button("Play")) {
         synthSequencer->stopSequence();
         while (synthSequencer->synth().getActiveVoices()) {
           synthSequencer->synth().allNotesOff();
           al_sleep(0.05);
         }
+        // build a temp string and add specified settings
+        std::string name = seqList[state.currentItem];
+        std::cout << state.include << std::endl;
+        std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
+        std::cout << currStr << std::endl;
+        std::string tempStr = synthSequencer->buildFullPath("temp");
+        std::ifstream src(currStr, std::ios::binary);
+        std::ofstream tempFile(tempStr, std::ios::binary);
+        // std::cout << "include: " << state.include << std::endl;
+        tempFile << state.include.c_str() << "\n";
+        // tempFile << "t " << tempoBuf << "\n";
+        tempFile << src.rdbuf();
+        tempFile.close();
+        name = "temp";
+
+        if(state.adjustTempo){
+            std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
+            std::string tempStr = synthSequencer->buildFullPath("temp");
+            std::ifstream src(currStr, std::ios::binary);
+            std::ofstream tempFile(tempStr, std::ios::binary);
+            // std::cout << "include: " << state.include << std::endl;
+            // tempFile << state.include.c_str() << "\n";
+            tempFile << "t " << tempoBuf << "\n";
+            tempFile << src.rdbuf();
+            tempFile.close();
+            name = "temp";
+        }
+
+        // play temp file instead of selected
+        // std::cout << currStr << std::endl;
+        // std::cout << seqList[state.currentItem] << std::endl;
+        // std::cout << tempStr << std::endl;
         state.totalDuration =
-            synthSequencer->getSequenceDuration(seqList[state.currentItem]);
-        synthSequencer->playSequence(seqList[state.currentItem]);
+            synthSequencer->getSequenceDuration(name);
+        synthSequencer->playSequence(name);
+
+        // state.totalDuration =
+        //     synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+        // synthSequencer->playSequence(seqList[state.currentItem]);
       }
       ImGui::SameLine();
       if (ImGui::Button("Stop")) {
+        std::cout << seqList[state.currentItem] << std::endl;
         synthSequencer->synth().allNotesOff();
         synthSequencer->stopSequence();
+        // delete temp file
+        // std::remove(synthSequencer->buildFullPath("temp").c_str());
       }
       //            static float time = state.currentTime;
       if (ImGui::SliderFloat("Position", &state.currentTime, 0.0f,
                              state.totalDuration)) {
         std::cout << "Requested time:" << state.currentTime << std::endl;
         synthSequencer->setTime(state.currentTime);
+        if(state.currentTime >= state.totalDuration){
+            // delete temp file
+            std::remove(synthSequencer->buildFullPath("temp").c_str());
+            state.totalDuration =
+            synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+            synthSequencer->playSequence(seqList[state.currentItem]);
+            synthSequencer->synth().allNotesOff();
+            synthSequencer->stopSequence();
+        }
       }
     } else {
       ImGui::Text("No sequences found.");

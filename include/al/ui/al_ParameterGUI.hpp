@@ -140,6 +140,8 @@ public:
                                   int &currentPresetSequencerItem);
   static void drawSequenceRecorder(SequenceRecorder *sequenceRecorder);
   static void drawSynthSequencer(SynthSequencer *synthSequencer);
+  static void drawMultiSynthSequencer(SynthSequencer *synthSequencer, SynthSequencer *synthSequencer2);
+  static void drawSynthSequencer(std::vector<SynthSequencer*> seqList);
   static void drawSynthRecorder(SynthRecorder *synthRecorder);
 
   static void drawAudioIO(AudioIO &io) { drawAudioIO(&io); }
@@ -274,10 +276,10 @@ public:
   std::string name() { return mName; }
 
   void drawSynthWidgets() {
-    drawFields();
-    drawAllNotesOffButton();
-    drawPresets();
-    ImGui::Separator();
+    // drawFields();
+    // drawAllNotesOffButton();
+    // drawPresets();
+    // ImGui::Separator();
     ImGui::Columns(2, nullptr, true);
     if (ImGui::Selectable("Polyphonic", mCurrentTab == 1)) {
       mCurrentTab = 1;
@@ -296,7 +298,7 @@ public:
     if (mCurrentTab == 1) {
       drawAllNotesOffButton();
       drawSynthSequencer();
-      drawSynthRecorder();
+    //   drawSynthRecorder();
     } else {
       drawTriggerButton();
       drawPresetSequencer();
@@ -343,6 +345,8 @@ public:
   }
 
   void drawSynthSequencer() { ParameterGUI::drawSynthSequencer(&mSequencer); }
+//   void drawSynthSequencer1() { ParameterGUI::drawSynthSequencer(mSequencerList); }
+  void drawSynthSequencer1() { ParameterGUI::drawMultiSynthSequencer(&mSequencer, &mSequencer2); }
 
   void drawSynthRecorder() { ParameterGUI::drawSynthRecorder(&mRecorder); }
 
@@ -453,7 +457,11 @@ private:
 
   //    PolySynth *mSynth;
   SynthSequencer mSequencer{TimeMasterMode::TIME_MASTER_AUDIO};
+  SynthSequencer mSequencer2{TimeMasterMode::TIME_MASTER_AUDIO};
+  SynthSequencer mSequencer3{TimeMasterMode::TIME_MASTER_AUDIO};
   SynthRecorder mRecorder;
+
+  std::vector<SynthSequencer*> mSequencerList = {&mSequencer, &mSequencer2, &mSequencer3};
 
   std::vector<std::shared_ptr<ParameterBundle>> mBundles;
   BundleGUIManager mBundleGui;

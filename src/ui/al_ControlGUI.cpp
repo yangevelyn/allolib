@@ -47,6 +47,7 @@ void ControlGUI::draw(Graphics & /*g*/) {
   }
   if (mSynthSequencer) {
     ParameterGUI::drawSynthSequencer(mSynthSequencer);
+    // ParameterGUI::drawSynthSequencer(mSequencerList);
   }
   if (mSynthRecorder) {
     ParameterGUI::drawSynthRecorder(mSynthRecorder);
