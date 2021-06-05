@@ -1156,6 +1156,10 @@ void ParameterGUI::drawMultiSynthSequencer(SynthSequencer *synthSequencer, Synth
     // }
 }
 
+bool comp(SynthSequencerEvent first, SynthSequencerEvent second){
+    return first.startTime < second.startTime;
+}
+
 void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
   struct SynthSequencerState {
     int currentItem;
@@ -1165,6 +1169,9 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
     std::string loadedSequence;
     bool adjustTempo;
     std::string include;
+    std::vector<int> currentSelectorItem{0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::vector<std::string> selectorList{"", "", "", "", "", "", "", "", "", ""};
+    std::list<SynthSequencerEvent> currEvents;
   };
   static std::map<SynthSequencer *, SynthSequencerState> stateMap;
   if (stateMap.find(synthSequencer) == stateMap.end()) {
@@ -1210,56 +1217,107 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
         std::cout << "Cropping sequence list to 64 items for display"
                   << std::endl;
       }
+      ImGui::PushItemWidth(128);
+      // for(int i = 0; i < 10; i++){
+      //   // char arr[3];
+      //   // strcpy(arr, std::to_string(i).c_str());
+      //   std::string label = "button " + std::to_string(i);
+      //   char const* pchar = label.c_str();
+      //   if(ImGui::Combo(pchar, &state.currentSelectorItem[i],
+      //                  ParameterGUI::vector_getter,
+      //                  static_cast<void *>(&seqList), seqList.size())){
+      //     std::cout << "currentSelectorItem: " << state.currentSelectorItem[i] << std::endl;
+      //     state.selectorList[i] = seqList[state.currentSelectorItem[i]];
+      //     std::cout << "from first: " << state.selectorList[i] << std::endl;
+      //   }
+      //   // ImGui::SameLine();
+
+      //   // if (ImGui::Combo("Sequences", &state.currentItem,
+      //   //                 ParameterGUI::vector_getter,
+      //   //                 static_cast<void *>(&seqList), seqList.size())) {
+      //   //   state.totalDuration =
+      //   //       synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+      //   // }
+      // }
       for(int i = 0; i < 10; i++){
-        char arr[seqList[i].length() + 1];
-        strcpy(arr, seqList[i].c_str());
-        synthSequencer->sequenceList.push_back(seqList[i].c_str());
-        if(i % 5 != 0){
-          ImGui::SameLine();
+        std::string label = "Sequence " + std::to_string(i);
+        if(ImGui::Combo(label.c_str(), &state.currentSelectorItem[i],
+                       ParameterGUI::vector_getter,
+                       static_cast<void *>(&seqList), seqList.size())){
+          std::cout << "currentSelectorItem: " << state.currentSelectorItem[i] << std::endl;
+          state.selectorList[i] = seqList[state.currentSelectorItem[i]];
+          std::cout << "from first: " << state.selectorList[i] << std::endl;
         }
-        if(ImGui::Button(arr)){
+        ImGui::SameLine();
+        // char arr[seqList[i].length() + 1];
+        // strcpy(arr, seqList[i].c_str());
+        // for keyboard playback
+        // synthSequencer->sequenceList.push_back(seqList[i].c_str());
+        // if(i % 5 != 0){
+        //   ImGui::SameLine();
+        // }
+        // if(ImGui::Button(arr)){
+        label = "Play " + std::to_string(i);
+        if(ImGui::Button(label.c_str())){
+          std::cout << "from second: " << state.selectorList[i] << std::endl;
             // synthSequencer->playSequence(seqList[i]);
             // synthSequencer->synth().registerSynthClass<Sub>(synthSequencer->buildFullPath(seqList[i]));
-          state.include += "= " + to_string(state.currentTime) + " \"" + seqList[i] + ".synthSequence\" 1\n";
+          // state.include += "= " + to_string(state.currentTime) + " \"" + seqList[i] + ".synthSequence\" 1\n";
+          // state.include += "= " + to_string(state.currentTime) + " \"" + state.selectorList[i] + ".synthSequence\" 1\n";
           // std::cout << state.include << std::endl;
-
-          // auto *voice = synthSequencer->synth().getVoice<Sub>();
-          // synthSequencer->addVoice(voice, &state.currentTime, )
-
           synthSequencer->stopSequence();
           while (synthSequencer->synth().getActiveVoices()) {
             synthSequencer->synth().allNotesOff();
             al_sleep(0.05);
           }
-          // build a temp string and add specified settings
-          std::string name = seqList[state.currentItem];
-          std::cout << state.include << std::endl;
-          std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
-          std::cout << currStr << std::endl;
-          std::string tempStr = synthSequencer->buildFullPath("temp");
-          std::ifstream src(currStr, std::ios::binary);
-          std::ofstream tempFile(tempStr, std::ios::binary);
-          // std::cout << "include: " << state.include << std::endl;
-          tempFile << state.include.c_str() << "\n";
-          // tempFile << "t " << tempoBuf << "\n";
-          tempFile << src.rdbuf();
-          tempFile.close();
-          name = "temp";
 
-          // play temp file instead of selected
-          // std::cout << currStr << std::endl;
-          // std::cout << seqList[state.currentItem] << std::endl;
-          // std::cout << tempStr << std::endl;
-          state.totalDuration =
-              synthSequencer->getSequenceDuration(name);
-          synthSequencer->playSequence(name, state.currentTime + 0.2);
+          std::list<SynthSequencerEvent> events = synthSequencer->loadSequence(seqList[i], 0, 1);
+          for(auto it = state.currEvents.begin(); it != state.currEvents.end(); it++){
+            it->startTime -= (state.currentTime + 0.05);
           }
+          state.currEvents.merge(events, comp);
+          synthSequencer->playEvents(state.currEvents);
+
+          // auto *voice = synthSequencer->synth().getVoice<Sub>();
+          // auto *voice = synthSequencer->synth().getVoice("Sub");
+          // synthSequencer->addVoice(voice, state.currentTime, 0.2);
+          // synthSequencer->synth().triggerOn(voice, 0);
+
+          // synthSequencer->stopSequence();
+          // while (synthSequencer->synth().getActiveVoices()) {
+          //   synthSequencer->synth().allNotesOff();
+          //   al_sleep(0.05);
+          // }
+          // // build a temp string and add specified settings
+          // std::string name = seqList[state.currentItem];
+          // std::cout << state.include << std::endl;
+          // std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
+          // std::cout << currStr << std::endl;
+          // std::string tempStr = synthSequencer->buildFullPath("temp");
+          // std::ifstream src(currStr, std::ios::binary);
+          // std::ofstream tempFile(tempStr, std::ios::binary);
+          // // std::cout << "include: " << state.include << std::endl;
+          // tempFile << state.include.c_str() << "\n";
+          // // tempFile << "t " << tempoBuf << "\n";
+          // tempFile << src.rdbuf();
+          // tempFile.close();
+          // name = "temp";
+
+          // // play temp file instead of selected
+          // // std::cout << currStr << std::endl;
+          // // std::cout << seqList[state.currentItem] << std::endl;
+          // // std::cout << tempStr << std::endl;
+          // state.totalDuration =
+          //     synthSequencer->getSequenceDuration(name);
+          // synthSequencer->playSequence(name, state.currentTime + 0.2);
+        }
 
         // if(ImGui::Combo(std::to_string(i).c_str(), &state.currentItem, ParameterGUI::vector_getter,
         //                static_cast<void *>(&seqList), seqList.size())) {
           
         // }
       }
+      ImGui::PopItemWidth();
       if (ImGui::Combo("Sequences", &state.currentItem,
                        ParameterGUI::vector_getter,
                        static_cast<void *>(&seqList), seqList.size())) {
@@ -1289,6 +1347,19 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
         std::string tempStr = synthSequencer->buildFullPath("temp");
         std::ifstream src(currStr, std::ios::binary);
         std::ofstream tempFile(tempStr, std::ios::binary);
+
+        if(state.adjustTempo){
+            // std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
+            // std::string tempStr = synthSequencer->buildFullPath("temp");
+            // std::ifstream src(currStr, std::ios::binary);
+            // std::ofstream tempFile(tempStr, std::ios::binary);
+            // std::cout << "include: " << state.include << std::endl;
+            // tempFile << state.include.c_str() << "\n";
+            tempFile << "t " << tempoBuf << "\n";
+            // tempFile << src.rdbuf();
+            // tempFile.close();
+            // name = "temp";
+        }
         // std::cout << "include: " << state.include << std::endl;
         tempFile << state.include.c_str() << "\n";
         // tempFile << "t " << tempoBuf << "\n";
@@ -1296,26 +1367,16 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
         tempFile.close();
         name = "temp";
 
-        if(state.adjustTempo){
-            std::string currStr = synthSequencer->buildFullPath(seqList[state.currentItem]);
-            std::string tempStr = synthSequencer->buildFullPath("temp");
-            std::ifstream src(currStr, std::ios::binary);
-            std::ofstream tempFile(tempStr, std::ios::binary);
-            // std::cout << "include: " << state.include << std::endl;
-            // tempFile << state.include.c_str() << "\n";
-            tempFile << "t " << tempoBuf << "\n";
-            tempFile << src.rdbuf();
-            tempFile.close();
-            name = "temp";
-        }
-
         // play temp file instead of selected
         // std::cout << currStr << std::endl;
         // std::cout << seqList[state.currentItem] << std::endl;
         // std::cout << tempStr << std::endl;
         state.totalDuration =
-            synthSequencer->getSequenceDuration(name);
-        synthSequencer->playSequence(name);
+            synthSequencer->getSequenceDuration(seqList[state.currentItem]);
+        // synthSequencer->playSequence(name);
+        state.currEvents = synthSequencer->loadSequence(seqList[state.currentItem], 0);
+        synthSequencer->playEvents(state.currEvents);
+        // state.currentTime = 0;
 
         // state.totalDuration =
         //     synthSequencer->getSequenceDuration(seqList[state.currentItem]);
@@ -1323,11 +1384,14 @@ void ParameterGUI::drawSynthSequencer(SynthSequencer *synthSequencer) {
       }
       ImGui::SameLine();
       if (ImGui::Button("Stop")) {
-        std::cout << seqList[state.currentItem] << std::endl;
+        // std::cout << seqList[state.currentItem] << std::endl;
         synthSequencer->synth().allNotesOff();
         synthSequencer->stopSequence();
         // delete temp file
         // std::remove(synthSequencer->buildFullPath("temp").c_str());
+        state.include = "";
+        state.currEvents.clear();
+        // state.currentTime = 0;
       }
       //            static float time = state.currentTime;
       if (ImGui::SliderFloat("Position", &state.currentTime, 0.0f,
